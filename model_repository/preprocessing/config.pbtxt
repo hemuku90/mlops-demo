@@ -1,0 +1,25 @@
+name: "preprocessing"
+backend: "python"
+max_batch_size: 8
+input [
+  { name: "alcohol", data_type: TYPE_FP32, dims: [ 1 ] },
+  { name: "malic_acid", data_type: TYPE_FP32, dims: [ 1 ] },
+  { name: "ash", data_type: TYPE_FP32, dims: [ 1 ] },
+  { name: "alcalinity_of_ash", data_type: TYPE_FP32, dims: [ 1 ] },
+  { name: "magnesium", data_type: TYPE_FP32, dims: [ 1 ] },
+  { name: "total_phenols", data_type: TYPE_FP32, dims: [ 1 ] },
+  { name: "flavanoids", data_type: TYPE_FP32, dims: [ 1 ] },
+  { name: "nonflavanoid_phenols", data_type: TYPE_FP32, dims: [ 1 ] },
+  { name: "proanthocyanins", data_type: TYPE_FP32, dims: [ 1 ] },
+  { name: "color_intensity", data_type: TYPE_FP32, dims: [ 1 ] },
+  { name: "hue", data_type: TYPE_FP32, dims: [ 1 ] },
+  { name: "od280_od315_of_diluted_wines", data_type: TYPE_FP32, dims: [ 1 ] },
+  { name: "proline", data_type: TYPE_FP32, dims: [ 1 ] }
+]
+output [
+  {
+    name: "float_input"
+    data_type: TYPE_FP32
+    dims: [ 13 ]
+  }
+]

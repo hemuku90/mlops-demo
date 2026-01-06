@@ -1,0 +1,113 @@
+name: MLOps Production Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  MLFLOW_TRACKING_URI: http://localhost:5001
+  IMAGE_NAME: mlops-wine-app
+
+jobs:
+  train-and-register:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python 3.9
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.9
+
+    - name: Setup DVC
+      uses: iterative/setup-dvc@v1
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements-dev.txt
+
+    - name: Pull Data via DVC
+      env:
+        # these secrets must be set in your GitHub repository settings
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      run: |
+        # This step demonstrates how to pull data in production.
+        # We try to pull from DVC. If no remote is configured (demo), we generate data.
+        
+        if dvc pull; then
+          echo "Successfully pulled data from DVC remote."
+        else
+          echo "DVC pull failed (likely no remote configured). Generating synthetic data..."
+          python src/model/data_gen.py
+        fi
+
+    - name: Start Local MLflow Server (Simulation)
+      run: |
+        # In production, this would be a remote server.
+        # We start it locally here so the training script can log to it.
+        pip install mlflow==2.14.1
+        mkdir mlflow_data
+        nohup mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root ./mlflow_data --host 0.0.0.0 --port 5001 &
+        sleep 5
+
+    - name: Train Model
+      run: python src/model/train.py
+
+    - name: Upload Run Info
+      uses: actions/upload-artifact@v3
+      with:
+        name: run-info
+        path: run_info.json
+
+  build-image:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Build Docker Image
+      run: |
+        docker build . --file Dockerfile --tag $IMAGE_NAME:${{ github.sha }}
+        # In production: docker push $IMAGE_NAME:${{ github.sha }}
+
+  generate-deployment-manifest:
+    needs: [train-and-register, build-image]
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Download Run Info
+      uses: actions/download-artifact@v3
+      with:
+        name: run-info
+
+    - name: Prepare Kubernetes Manifest
+      run: |
+        # Extract Artifact URI
+        ARTIFACT_URI=$(jq -r .artifact_uri run_info.json)
+        # In a real S3 setup, this would be s3://...
+        # Since we ran locally in CI, it might be a local path, but we simulate the substitution.
+        echo "Using Model Artifact URI: $ARTIFACT_URI"
+        
+        export MODEL_ARTIFACT_URI=$ARTIFACT_URI
+        export IMAGE_TAG=${{ github.sha }}
+        
+        # Substitute variables in the manifest
+        envsubst < k8s/seldon-deployment.yaml > k8s/final-deployment.yaml
+        
+        cat k8s/final-deployment.yaml
+
+    - name: Commit/Apply Manifest (GitOps)
+      run: |
+        echo "Manifest generated at k8s/final-deployment.yaml"
+        # In a GitOps workflow:
+        # git config ...
+        # git add k8s/final-deployment.yaml
+        # git commit -m "Update deployment to version ${{ github.sha }}"
+        # git push
+        #
+        # OR direct apply:
+        # kubectl apply -f k8s/final-deployment.yaml

@@ -1,0 +1,59 @@
+name: "ensemble_model"
+platform: "ensemble"
+max_batch_size: 8
+input [
+  { name: "alcohol", data_type: TYPE_FP32, dims: [ 1 ] },
+  { name: "malic_acid", data_type: TYPE_FP32, dims: [ 1 ] },
+  { name: "ash", data_type: TYPE_FP32, dims: [ 1 ] },
+  { name: "alcalinity_of_ash", data_type: TYPE_FP32, dims: [ 1 ] },
+  { name: "magnesium", data_type: TYPE_FP32, dims: [ 1 ] },
+  { name: "total_phenols", data_type: TYPE_FP32, dims: [ 1 ] },
+  { name: "flavanoids", data_type: TYPE_FP32, dims: [ 1 ] },
+  { name: "nonflavanoid_phenols", data_type: TYPE_FP32, dims: [ 1 ] },
+  { name: "proanthocyanins", data_type: TYPE_FP32, dims: [ 1 ] },
+  { name: "color_intensity", data_type: TYPE_FP32, dims: [ 1 ] },
+  { name: "hue", data_type: TYPE_FP32, dims: [ 1 ] },
+  { name: "od280_od315_of_diluted_wines", data_type: TYPE_FP32, dims: [ 1 ] },
+  { name: "proline", data_type: TYPE_FP32, dims: [ 1 ] }
+]
+output [
+  {
+    name: "prediction"
+    data_type: TYPE_FP32
+    dims: [ 1 ]
+  }
+]
+ensemble_scheduling {
+  step [
+    {
+      model_name: "preprocessing"
+      model_version: -1
+      input_map { key: "alcohol" value: "alcohol" }
+      input_map { key: "malic_acid" value: "malic_acid" }
+      input_map { key: "ash" value: "ash" }
+      input_map { key: "alcalinity_of_ash" value: "alcalinity_of_ash" }
+      input_map { key: "magnesium" value: "magnesium" }
+      input_map { key: "total_phenols" value: "total_phenols" }
+      input_map { key: "flavanoids" value: "flavanoids" }
+      input_map { key: "nonflavanoid_phenols" value: "nonflavanoid_phenols" }
+      input_map { key: "proanthocyanins" value: "proanthocyanins" }
+      input_map { key: "color_intensity" value: "color_intensity" }
+      input_map { key: "hue" value: "hue" }
+      input_map { key: "od280_od315_of_diluted_wines" value: "od280_od315_of_diluted_wines" }
+      input_map { key: "proline" value: "proline" }
+      output_map { key: "float_input" value: "preprocessed_data" }
+    },
+    {
+      model_name: "wine_model"
+      model_version: -1
+      input_map { key: "float_input" value: "preprocessed_data" }
+      output_map { key: "variable" value: "model_output" }
+    },
+    {
+      model_name: "postprocessing"
+      model_version: -1
+      input_map { key: "variable" value: "model_output" }
+      output_map { key: "prediction" value: "prediction" }
+    }
+  ]
+}

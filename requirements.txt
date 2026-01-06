@@ -1,0 +1,11 @@
+pandas<2.2.0
+scikit-learn<1.4.0
+mlflow==2.14.1
+fastapi
+uvicorn
+numpy<2.0.0
+requests
+skl2onnx
+onnx<1.15.0
+onnxruntime<1.17.0
+tritonclient[http]

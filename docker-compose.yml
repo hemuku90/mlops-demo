@@ -1,0 +1,37 @@
+version: '3.7'
+
+services:
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.14.1
+    ports:
+      - "5001:5000"
+    command: mlflow server --backend-store-uri sqlite:////mlflow/mlflow.db --serve-artifacts --artifacts-destination /mlflow/artifacts --host 0.0.0.0
+    volumes:
+      - ./mlflow_data:/mlflow
+
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - MODEL_PATH=/app/models/wine_model
+      - TRITON_URL=triton:8000
+    volumes:
+      - ./models:/app/models
+      - ./data:/app/data
+    depends_on:
+      - mlflow
+      - triton
+
+  triton:
+    image: nvcr.io/nvidia/tritonserver:24.03-py3
+    ports:
+      - "8080:8000"  # HTTP mapped to 8080 to avoid conflict with App
+      - "8001:8001"  # GRPC
+      - "8002:8002"  # Metricsx
+    volumes:
+      - ./model_repository:/models
+    command: tritonserver --model-repository=/models --log-verbose=1
+    shm_size: '1gb'
+

@@ -1,0 +1,58 @@
+apiVersion: machinelearning.seldon.io/v1
+kind: SeldonDeployment
+metadata:
+  name: wine-model
+  namespace: default
+spec:
+  name: wine-model
+  predictors:
+  - componentSpecs:
+    - spec:
+        containers:
+        - name: classifier
+          imagePullPolicy: IfNotPresent
+    graph:
+      children: []
+      implementation: MLFLOW_SERVER
+      modelUri: ${MODEL_ARTIFACT_URI} # To be replaced by CI/CD
+      name: classifier
+    name: default
+    replicas: 1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wine-app
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wine-app
+  template:
+    metadata:
+      labels:
+        app: wine-app
+    spec:
+      containers:
+      - name: wine-app
+        image: mlops-wine-app:${IMAGE_TAG} # To be replaced by CI/CD
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8000
+        env:
+        - name: MLFLOW_TRACKING_URI
+          value: "http://wine-model-default:8000" # Pointing to Seldon Service (Conceptual)
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wine-app-service
+spec:
+  selector:
+    app: wine-app
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8000
+  type: LoadBalancer

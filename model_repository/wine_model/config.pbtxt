@@ -1,0 +1,17 @@
+name: "wine_model"
+platform: "onnxruntime_onnx"
+max_batch_size: 8
+input [
+  {
+    name: "float_input"
+    data_type: TYPE_FP32
+    dims: [ 13 ]
+  }
+]
+output [
+  {
+    name: "variable"
+    data_type: TYPE_FP32
+    dims: [ 1 ]
+  }
+]

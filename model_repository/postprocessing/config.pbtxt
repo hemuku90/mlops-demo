@@ -1,0 +1,17 @@
+name: "postprocessing"
+backend: "python"
+max_batch_size: 8
+input [
+  {
+    name: "variable"
+    data_type: TYPE_FP32
+    dims: [ 1 ]
+  }
+]
+output [
+  {
+    name: "prediction"
+    data_type: TYPE_FP32
+    dims: [ 1 ]
+  }
+]
