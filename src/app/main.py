@@ -50,7 +50,7 @@ def read_root():
 
 @app.post("/predict")
 def predict(features: WineFeatures):
-    data_dict = features.dict()
+    data_dict = features.model_dump()
     
     if TRITON_URL:
         # Proxy to Triton Ensemble
