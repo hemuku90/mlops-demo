@@ -56,6 +56,20 @@ python src/model/data_gen.py
 python src/model/train.py
 ```
 
+### 1a. Experimentation (Jupyter Notebook)
+
+You can also use the provided Jupyter Notebook for interactive training and experimentation.
+
+1.  **Install Jupyter**: Ensure you have installed the dev requirements (includes `jupyter` and `ipykernel`).
+    ```bash
+    pip install -r requirements-dev.txt
+    ```
+2.  **Launch Jupyter**:
+    ```bash
+    jupyter notebook
+    ```
+3.  **Run the Notebook**: Open `src/model/experiment.ipynb`. This notebook performs the same steps as `train.py` (training, MLflow logging, ONNX export) and also deploys the model directly to the local Triton model repository for immediate testing.
+
 ### 2. Prepare Triton Model Repository
 
 The training script saves the ONNX model. We need to ensure it's in the correct place for Triton (already handled by the repository structure, but for reference):
