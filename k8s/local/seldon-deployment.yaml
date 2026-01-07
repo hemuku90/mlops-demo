@@ -1,0 +1,71 @@
+apiVersion: machinelearning.seldon.io/v1
+kind: SeldonDeployment
+metadata:
+  name: wine-model
+spec:
+  protocol: kfserving
+  name: wine-model
+  predictors:
+  - componentSpecs:
+    - spec:
+        volumes:
+        - name: triton-repo
+          emptyDir: {}
+        initContainers:
+        - name: repo-copier
+          image: mlops-triton:latest
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c"]
+          args:
+          - |
+            echo "Copying model repository from image..."
+            cp -r /models/* /mnt/triton-repo/
+            ls -R /mnt/triton-repo
+          volumeMounts:
+          - name: triton-repo
+            mountPath: /mnt/triton-repo
+        - name: model-updater
+          image: alpine:latest
+          command: ["/bin/sh", "-c"]
+          args:
+          - |
+            echo "Downloading ONNX model from MLflow Service..."
+            # URL format: http://mlflow-service:5000/get-artifact?path=model_onnx/model.onnx&run_uuid=<RUN_ID>
+            # The Makefile will substitute ${MLFLOW_RUN_ID}
+            wget -O /mnt/triton-repo/wine_model/1/model.onnx "http://mlflow-service:5000/get-artifact?path=model_onnx/model.onnx&run_uuid=${MLFLOW_RUN_ID}"
+            echo "Model downloaded."
+            ls -l /mnt/triton-repo/wine_model/1/model.onnx
+          volumeMounts:
+          - name: triton-repo
+            mountPath: /mnt/triton-repo
+        containers:
+        - name: ensemble-model
+          image: mlops-triton:latest
+          imagePullPolicy: IfNotPresent
+          args: 
+          - tritonserver
+          - --model-repository=/mnt/triton-repo
+          - --allow-metrics=true
+          - --http-port=9000
+          - --grpc-port=9001
+          - --metrics-port=8002
+          ports:
+          - containerPort: 9000
+            name: http
+          - containerPort: 9001
+            name: grpc
+          - containerPort: 8002
+            name: metrics
+          volumeMounts:
+          - name: triton-repo
+            mountPath: /mnt/triton-repo
+            readOnly: true
+    graph:
+      children: []
+      name: ensemble-model
+      type: MODEL
+      endpoint:
+        type: REST
+        service_port: 9000
+    name: default
+    replicas: 1

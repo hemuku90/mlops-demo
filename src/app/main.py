@@ -14,12 +14,15 @@ app = FastAPI(title="Wine Quality Prediction API")
 
 # Configuration
 TRITON_URL = os.getenv("TRITON_URL")
+SELDON_URL = os.getenv("SELDON_URL")
 MODEL_PATH = os.getenv("MODEL_PATH", "models/wine_model")
 
 model = None
 
 if TRITON_URL:
     print(f"Configured to proxy predictions to Triton: {TRITON_URL}")
+elif SELDON_URL:
+    print(f"Configured to proxy predictions to Seldon: {SELDON_URL}")
 else:
     # Load model locally for Dev/Test
     try:
@@ -82,6 +85,52 @@ def predict(features: WineFeatures):
             
         except Exception as e:
              raise HTTPException(status_code=500, detail=f"Triton inference failed: {str(e)}")
+
+    elif SELDON_URL:
+        # Proxy to Seldon Core (KServe V2 Protocol)
+        try:
+            # KServe V2 payload format for Triton ensemble
+            # The ensemble expects individual feature inputs matching preprocessing model
+            expected_cols = [
+                "alcohol", "malic_acid", "ash", "alcalinity_of_ash", "magnesium",
+                "total_phenols", "flavanoids", "nonflavanoid_phenols", "proanthocyanins",
+                "color_intensity", "hue", "od280_od315_of_diluted_wines", "proline"
+            ]
+            
+            # Build V2 inference request with individual inputs for each feature
+            inputs = []
+            for col in expected_cols:
+                value = data_dict.get(col)
+                inputs.append({
+                    "name": col,
+                    "shape": [1, 1],
+                    "datatype": "FP32",
+                    "data": [[value]]
+                })
+            
+            payload = {
+                "inputs": inputs,
+                "outputs": [{"name": "prediction"}]
+            }
+            
+            # KServe V2 endpoint: /v2/models/{model_name}/infer
+            # Model name is "ensemble-model" (the Triton ensemble entry point)
+            predict_url = f"{SELDON_URL}/v2/models/ensemble-model/infer"
+            
+            response = requests.post(predict_url, json=payload)
+            response.raise_for_status()
+            
+            result = response.json()
+            
+            # Extract prediction from V2 response
+            # Format: {"outputs": [{"name": "prediction", "data": [...]}]}
+            outputs = result.get("outputs", [])
+            prediction = outputs[0].get("data", [0])[0] if outputs else 0
+            
+            return {"prediction": float(prediction)}
+            
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Seldon inference failed: {str(e)}")
 
     else:
         # Local Inference (Scikit-Learn)
