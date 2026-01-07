@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wine-app
+  labels:
+    app: wine-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wine-app
+  template:
+    metadata:
+      labels:
+        app: wine-app
+    spec:
+      containers:
+      - name: wine-app
+        image: mlops-wine-app:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8000
+        env:
+        - name: TRITON_URL
+          value: "triton-service:8000"
+        - name: MODEL_PATH
+          value: "/app/models/wine_model"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wine-app-service
+spec:
+  selector:
+    app: wine-app
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000
+  type: LoadBalancer

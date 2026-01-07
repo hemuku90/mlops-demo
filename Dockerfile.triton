@@ -1,0 +1,7 @@
+FROM nvcr.io/nvidia/tritonserver:24.03-py3
+
+# Copy the model repository into the image
+COPY model_repository /models
+
+# Set the command to serve the models
+CMD ["tritonserver", "--model-repository=/models", "--log-verbose=1"]

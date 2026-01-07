@@ -116,6 +116,34 @@ curl -X 'POST' \
 }'
 ```
 
+### 5. Local Kubernetes Deployment (Verification)
+
+Before pushing to CI/CD, you can verify the deployment in a local Kubernetes cluster (Docker Desktop or Kind).
+
+**Prerequisites:**
+- Kubernetes cluster running (e.g., Docker Desktop enabled)
+- `kubectl` configured
+
+**Steps:**
+
+1.  **Build & Deploy**:
+    This builds the Docker images (including baking the model into the Triton image for local testing) and applies standard Kubernetes manifests.
+    ```bash
+    make build
+    make deploy
+    ```
+
+2.  **Test Inference**:
+    Sends a request to the application running in Kubernetes (exposed via LoadBalancer on port 8000).
+    ```bash
+    make test
+    ```
+
+3.  **Clean Up**:
+    ```bash
+    make clean
+    ```
+
 ## CI/CD Pipeline (GitOps)
 
 The `.github/workflows/main.yml` defines a production-grade pipeline:
