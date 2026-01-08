@@ -187,3 +187,32 @@ To deploy on Kubernetes:
     ```
 
     The Inference App will detect it is running in production (via `SELDON_PREDICT_URL` env var) and proxy requests to the Seldon predictor.
+
+## Drift Detection (Alibi Detect)
+
+This project integrates **Alibi Detect** to monitor the model for concept drift (Kolmogorov-Smirnov test on input features).
+
+### Architecture
+
+1.  **Drift Training**: A separate pipeline trains a drift detector on the reference training data and saves it as a `dill` artifact.
+2.  **Request Logging**: The main Seldon Model (`wine-model`) is configured to asynchronously log all request/response payloads to the Drift Detector service.
+3.  **Drift Server**: A separate Seldon Deployment (`wine-drift-detector`) runs the Alibi Detect server. It receives payloads, calculates drift, and exposes Prometheus metrics.
+
+### Setup Steps
+
+1.  **Train Detector**:
+    ```bash
+    make train-drift-detector
+    ```
+    This runs a Docker container to train the detector and saves it to `models/drift_detector/detector.dill`.
+
+2.  **Deploy Drift Server**:
+    ```bash
+    make deploy-drift
+    ```
+    Builds the custom drift server image (baking in the detector artifact) and deploys it to Kubernetes.
+
+3.  **Metrics**:
+    The Drift Detector exposes the following Prometheus metrics at port 8000 (path `/prometheus`):
+    *   `seldon_metric_drift_found`: 1 if drift is detected, 0 otherwise.
+    *   `seldon_metric_p_value`: The p-value of the statistical test.

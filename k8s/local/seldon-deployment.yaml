@@ -67,5 +67,8 @@ spec:
       endpoint:
         type: REST
         service_port: 9000
+      logger:
+        mode: all
+        url: http://wine-drift-detector-default:8000/api/v1.0/predictions
     name: default
     replicas: 1
