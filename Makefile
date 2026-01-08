@@ -82,9 +82,33 @@ deploy-seldon:
 	@echo "Waiting for Seldon Deployment..."
 	kubectl wait --for=condition=available deployment/wine-model-default-0-ensemble-model --timeout=300s -n $(KUBE_NAMESPACE)
 
+# --- Drift Detection ---
+
+build-drift-trainer:
+	docker build -t mlops-drift-trainer:latest -f Dockerfile.drift .
+
+train-drift-detector: build-drift-trainer
+	mkdir -p models/drift_detector
+	docker run --rm \
+		-v $(PWD)/models/drift_detector:/app/models/drift_detector \
+		mlops-drift-trainer:latest
+
+build-drift-server: train-drift-detector
+	# Create a Dockerfile for the server on the fly or expect it to exist
+	# We will assume Dockerfile.drift-server exists (to be created next)
+	docker build -t mlops-drift-server:latest -f Dockerfile.drift-server .
+
+deploy-drift: build-drift-server
+	# Load image into Kind/Desktop
+	# kind load docker-image mlops-drift-server:latest --name desktop || true
+	# Apply deployment
+	kubectl apply -f k8s/local/drift-detector.yaml -n $(KUBE_NAMESPACE)
+	# Wait for deployment
+	kubectl wait --for=condition=available deployment/wine-drift-detector-default-0-detector --timeout=300s -n $(KUBE_NAMESPACE)
+
 # Test Inference
 test:
-	@echo "Testing Inference Endpoint..."
+	@echo "Testing prediction endpoint..."
 	@# Check if port forwarding is needed or if LoadBalancer is working (Docker Desktop)
 	@echo "Sending prediction request to http://localhost:8000/predict"
 	curl -X POST "http://localhost:8000/predict" \

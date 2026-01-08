@@ -1,0 +1,29 @@
+apiVersion: machinelearning.seldon.io/v1
+kind: SeldonDeployment
+metadata:
+  name: wine-drift-detector
+spec:
+  predictors:
+  - componentSpecs:
+    - spec:
+        containers:
+        - name: detector
+          image: mlops-drift-server:latest
+          imagePullPolicy: IfNotPresent
+          env:
+          - name: STORAGE_URI
+            value: "/mnt/models/drift_detector"
+          # Alibi Detect Server specific configuration
+          - name: PROTOCOL
+            value: "seldon.http"
+          - name: REPLY_URL
+            value: "http://default-broker" # Optional: for forwarding alerts (e.g. to Knative)
+          - name: PREDICT_PARAMETERS
+            value: '{"batch_size": 1}'
+    graph:
+      name: detector
+      type: MODEL
+      endpoint:
+        type: REST
+    name: default
+    replicas: 1
