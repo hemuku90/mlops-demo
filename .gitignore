@@ -31,3 +31,5 @@ model_repository/**/model.onnx
 # IDE
 .vscode/
 .idea/
+github
+github.pub
