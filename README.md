@@ -21,6 +21,8 @@ This project demonstrates a complete, production-grade MLOps pipeline including 
 
 ## Architecture
 
+For a comprehensive deep-dive into the system architecture, SDLC phases, CI/CD workflows, and branching strategy, please refer to the [System Architecture & Process Documentation](docs/ARCHITECTURE_AND_PROCESS.md).
+
 This project implements a **Hybrid Deployment Pattern**:
 
 1.  **Development**: The Inference App loads the model directly from the local file system (Scikit-Learn).
