@@ -37,6 +37,9 @@ class DriftWrapper:
             raise RuntimeError("Drift detector not ready")
 
         try:
+            logging.info(f"Received request with type(X): {type(X)}")
+            logging.info(f"Received request with X: {X}")
+            
             # X comes from Seldon. If it's a request from another Seldon model (logger),
             # the payload structure might be complex (SeldonMessage).
             # But the Seldon Python wrapper usually unwraps 'data' -> 'ndarray'.
@@ -53,6 +56,8 @@ class DriftWrapper:
             is_drift = int(preds['data']['is_drift'])
             p_vals = preds['data']['p_val']
             
+            logging.info(f"Drift detection result: is_drift={is_drift}, p_vals={p_vals}")
+
             # If p_vals is array (feature-wise), take min or mean?
             # KSDrift returns p-values per feature.
             # We can log them as custom metrics.

@@ -96,11 +96,11 @@ train-drift-detector: build-drift-trainer
 build-drift-server: train-drift-detector
 	# Create a Dockerfile for the server on the fly or expect it to exist
 	# We will assume Dockerfile.drift-server exists (to be created next)
-	docker build -t mlops-drift-server:latest -f Dockerfile.drift-server .
+	docker build -t mlops-drift-server:v2 -f Dockerfile.drift-server .
 
 deploy-drift: build-drift-server
 	# Load image into Kind/Desktop
-	# kind load docker-image mlops-drift-server:latest --name desktop || true
+	# kind load docker-image mlops-drift-server:v2 --name mlops-demo || true
 	# Apply deployment
 	kubectl apply -f k8s/local/drift-detector.yaml -n $(KUBE_NAMESPACE)
 	# Wait for deployment

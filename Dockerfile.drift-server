@@ -6,6 +6,8 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     gcc \
     build-essential \
+    curl \
+    net-tools \
     && rm -rf /var/lib/apt/lists/*
 
 # Install python dependencies
@@ -31,6 +33,9 @@ ENV SERVICE_TYPE=MODEL
 ENV STORAGE_URI=/mnt/models/drift_detector
 
 # Expose ports
+# Fix Numba caching issue in container
+ENV NUMBA_CACHE_DIR=/tmp
+
 EXPOSE 5000 9000
 
 # Start Seldon Microservice

@@ -8,8 +8,13 @@ spec:
     - spec:
         containers:
         - name: detector
-          image: mlops-drift-server:latest
+          image: mlops-drift-server:v4
           imagePullPolicy: IfNotPresent
+          ports:
+          - containerPort: 9000
+            name: http
+          - containerPort: 5000
+            name: grpc
           env:
           - name: STORAGE_URI
             value: "/mnt/models/drift_detector"
@@ -20,10 +25,13 @@ spec:
             value: "http://default-broker" # Optional: for forwarding alerts (e.g. to Knative)
           - name: PREDICT_PARAMETERS
             value: '{"batch_size": 1}'
+          - name: NUMBA_CACHE_DIR
+            value: "/tmp"
     graph:
       name: detector
       type: MODEL
       endpoint:
         type: REST
+        service_host: "127.0.0.1"
     name: default
     replicas: 1
