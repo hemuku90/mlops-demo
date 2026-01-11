@@ -8,6 +8,7 @@ class DriftWrapper:
         self.model_name = "DriftWrapper"
         self.detector = None
         self.ready = False
+        self.drift_found = 0
         self.load()
 
     def load(self):

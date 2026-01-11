@@ -8,7 +8,7 @@ spec:
     - spec:
         containers:
         - name: detector
-          image: mlops-drift-server:v4
+          image: mlops-drift-server:v5
           imagePullPolicy: IfNotPresent
           ports:
           - containerPort: 9000
