@@ -10,16 +10,16 @@ The system follows a **Hybrid Deployment Pattern**, bridging local development f
 
 ```mermaid
 graph TD
-    subgraph "Development Environment (Local/Docker)"
+    subgraph DevEnv ["Development Environment (Local/Docker)"]
         DS[Data Scientist] -->|Trains| NB[Jupyter/Scripts]
         NB -->|Logs Exp| MLflow_Dev[Local MLflow]
         NB -->|Saves| Local_Model[Local Artifacts]
-        App_Dev[FastAPI App (Dev Mode)] -->|Loads| Local_Model
+        App_Dev["FastAPI App (Dev Mode)"] -->|Loads| Local_Model
     end
 
-    subgraph "CI/CD Pipeline (GitHub Actions)"
+    subgraph CI_CD ["CI/CD Pipeline (GitHub Actions)"]
         Git[GitHub Repo] -->|Trigger| CI[CI Workflow]
-        CI -->|1. Data Provision| DVC[DVC / Data Gen]
+        CI -->|1. Data Provision| DVC["DVC / Data Gen"]
         CI -->|2. Train & Eval| Trainer[Training Job]
         Trainer -->|Logs Run| MLflow_Remote[Remote MLflow]
         Trainer -->|Exports| ONNX[ONNX Model]
@@ -27,17 +27,17 @@ graph TD
         CI -->|4. Deploy| K8s_Manifest[K8s Manifests]
     end
 
-    subgraph "Production Environment (Kubernetes/Kind)"
-        Ingress[Ingress / LoadBalancer] -->|HTTP/REST| WineApp_Prod[FastAPI App (Proxy)]
+    subgraph ProdEnv ["Production Environment (Kubernetes/Kind)"]
+        Ingress["Ingress / LoadBalancer"] -->|HTTP/REST| WineApp_Prod["FastAPI App (Proxy)"]
         
-        subgraph "Seldon Core Deployment"
+        subgraph SeldonDep ["Seldon Core Deployment"]
             WineApp_Prod -->|Seldon Protocol| Seldon_Ens[Seldon Ensemble]
             
-            subgraph "Triton Inference Server"
+            subgraph Triton ["Triton Inference Server"]
                 Seldon_Ens -->|gRPC/HTTP| Triton_Ens[Ensemble Model]
-                Triton_Ens -->|Step 1| Pre[Preprocessing (Python)]
-                Triton_Ens -->|Step 2| Model[ElasticNet (ONNX)]
-                Triton_Ens -->|Step 3| Post[Postprocessing (Python)]
+                Triton_Ens -->|Step 1| Pre["Preprocessing (Python)"]
+                Triton_Ens -->|Step 2| Model["ElasticNet (ONNX)"]
+                Triton_Ens -->|Step 3| Post["Postprocessing (Python)"]
             end
             
             Seldon_Ens -.->|Async Logging| Drift_Svc[Drift Detector Service]
