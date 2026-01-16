@@ -13,6 +13,12 @@ from tritonclient.utils import *
 app = FastAPI(title="Wine Quality Prediction API")
 
 # Configuration
+print("DEBUG: Dumping environment variables at startup:")
+for k, v in os.environ.items():
+    if "URL" in k or "MODEL" in k:
+        print(f"{k}={v}")
+print("DEBUG: End of environment variables")
+
 TRITON_URL = os.getenv("TRITON_URL")
 SELDON_URL = os.getenv("SELDON_URL")
 MODEL_PATH = os.getenv("MODEL_PATH", "models/wine_model")
@@ -53,6 +59,9 @@ def read_root():
 
 @app.post("/predict")
 def predict(features: WineFeatures):
+    print(f"DEBUG: TRITON_URL='{TRITON_URL}'")
+    print(f"DEBUG: SELDON_URL='{SELDON_URL}'")
+    print(f"DEBUG: os.environ['SELDON_URL']='{os.environ.get('SELDON_URL')}'")
     data_dict = features.model_dump()
     
     if TRITON_URL:
@@ -121,6 +130,7 @@ def predict(features: WineFeatures):
             response.raise_for_status()
             
             result = response.json()
+            print(f"DEBUG: Seldon Response: {json.dumps(result, indent=2)}")
             
             # Extract prediction from V2 response
             # Format: {"outputs": [{"name": "prediction", "data": [...]}]}

@@ -1,4 +1,6 @@
 ```mermaid
 flowchart TD
-	node1["data/wine_quality.csv.dvc"]
+	node1["data_gen"]
+	node2["train"]
+	node1-->node2
 ```

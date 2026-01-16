@@ -10,7 +10,9 @@ services:
       - ./mlflow_data:/mlflow
 
   app:
-    build: .
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.app
     ports:
       - "8000:8000"
     environment:

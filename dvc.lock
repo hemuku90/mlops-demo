@@ -1,0 +1,61 @@
+schema: '2.0'
+stages:
+  data_gen:
+    cmd: python3 src/model/data_gen.py
+    deps:
+    - path: src/model/data_gen.py
+      hash: md5
+      md5: ede8b6351f59190662ebff5fc7ce24d2
+      size: 426
+    outs:
+    - path: data/wine_quality.csv
+      hash: md5
+      md5: 2925c4a8cd201c79d97d3d283429ef23
+      size: 12261
+  train:
+    cmd: python3 src/model/train.py
+    deps:
+    - path: data/wine_quality.csv
+      hash: md5
+      md5: 2925c4a8cd201c79d97d3d283429ef23
+      size: 12261
+    - path: src/model/train.py
+      hash: md5
+      md5: eb6cef1d66f76ed4ca3b35d8b8e1bbb4
+      size: 6487
+    params:
+      params.yaml:
+        train:
+          experiment_name: wine_quality_optimization
+          seed: 42
+          enabled_algorithms:
+          - elastic_net
+          - random_forest
+          search_space:
+            elastic_net:
+              alpha:
+              - 0.1
+              - 0.5
+              - 1.0
+              l1_ratio:
+              - 0.1
+              - 0.5
+              - 0.9
+            random_forest:
+              n_estimators:
+              - 50
+              - 100
+              max_depth:
+              - 5
+              - 10
+              - 20
+    outs:
+    - path: models/wine_model
+      hash: md5
+      md5: 2c7b69c8de8083e2a73c9fe36884a66a.dir
+      size: 111280
+      nfiles: 5
+    - path: run_info.json
+      hash: md5
+      md5: 4e3ed298ba1bc7cefd579d9cbe3d513d
+      size: 199

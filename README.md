@@ -8,12 +8,12 @@ This project demonstrates a complete, production-grade MLOps pipeline including 
 .
 ├── .github/workflows   # CI/CD Pipelines (GitOps Pattern)
 ├── data/               # Data directory (tracked by DVC)
+├── docker/             # Dockerfiles for all components
 ├── k8s/                # Kubernetes Manifests (Seldon Core)
 ├── models/             # Trained models (Local Dev only)
 ├── src/
 │   ├── app/            # FastAPI Inference Application (Hybrid: Local/Seldon)
 │   └── model/          # Model Training Scripts
-├── Dockerfile          # App Container (Model-agnostic)
 ├── docker-compose.yml  # Local Development Stack (MLflow + App)
 ├── requirements.txt    # Python Dependencies
 └── README.md
@@ -28,8 +28,68 @@ This project implements a **Hybrid Deployment Pattern**:
 1.  **Development**: The Inference App loads the model directly from the local file system (Scikit-Learn).
 2.  **Production (Triton)**: The Inference App acts as a proxy/gateway. It forwards requests to an **NVIDIA Triton Inference Server** which orchestrates an ensemble pipeline:
     *   **Preprocessing (Python)**: Validates and orders inputs.
-    *   **Inference (ONNX)**: Runs the ElasticNet model.
+    *   **Inference (ONNX)**: Runs the best selected model (ElasticNet or RandomForest).
     *   **Postprocessing (Python)**: Formats the output.
+
+### Production Readiness & Best Practices
+
+*   **Containerization**: Optimized, multi-stage Dockerfiles located in `docker/`. Non-root users are used for security.
+*   **CI/CD**: GitHub Actions pipeline (`.github/workflows/main.yml`) includes:
+    *   Linting (flake8) and Unit Testing (pytest).
+    *   Data provisioning via DVC (with synthetic fallback).
+    *   **AutoML Training Loop**: Iterates over multiple algorithms (ElasticNet, RandomForest) and hyperparameter grids, logging all runs to Dagshub/MLflow, and automatically selecting the best model (lowest RMSE) for production.
+    *   Docker image building (Git SHA tagged).
+    *   GitOps manifest generation.
+*   **Experiment Tracking**: Integrated with **Dagshub** for remote MLflow logging. Experiments are named and runs are tagged with algorithm names.
+*   **Drift Detection**: Integrated Alibi Detect for concept drift monitoring.
+
+## DVC (Data Version Control) Pipeline
+
+This project uses DVC to orchestrate the machine learning pipeline (Data Generation -> Training).
+
+### Why use DVC?
+
+1.  **Reproducibility**: DVC tracks the exact version of data, code, and parameters used to produce a model. `dvc repro` ensures you can always reproduce a result.
+2.  **Caching**: DVC caches intermediate results. If you change the training code but not the data generation code, `dvc repro` will skip data generation and only re-run training, saving massive amounts of time in large pipelines.
+3.  **Data Versioning**: Like Git for data. You can switch between dataset versions (`git checkout`) and DVC handles the large files seamlessly.
+4.  **DAG Management**: DVC builds a Directed Acyclic Graph of your pipeline stages, resolving dependencies automatically.
+
+**What if we don't use DVC?**
+*   **Manual Tracking**: You'd have to manually remember which dataset version `v1.csv` goes with `model_v1.pkl`.
+*   **Re-running Everything**: Without smart caching, you might re-run expensive data processing steps even when not needed.
+*   **"It worked on my machine"**: Harder to guarantee that the production training environment matches local dev without strict dependency locking on data/params.
+
+### 1. Initialize & Setup
+
+```bash
+# Install dependencies (including dvc)
+pip install -r requirements-dev.txt
+
+# Initialize DVC (if not already done)
+dvc init
+```
+
+### 2. Run the Pipeline
+
+Use `dvc repro` to run the pipeline defined in `dvc.yaml`. This will checks dependencies and only run stages that have changed.
+
+```bash
+# Run the full pipeline
+dvc repro
+
+# Or using Make
+make pipeline
+```
+
+### 3. Parameters
+
+Training hyperparameters are defined in `params.yaml`. Modify them there and rerun the pipeline to experiment.
+
+```yaml
+train:
+  alpha: 0.5
+  l1_ratio: 0.5
+```
 
 ## Prerequisites
 
@@ -165,15 +225,35 @@ The `.github/workflows/main.yml` defines a production-grade pipeline:
     *   Injects the specific `Artifact URI` and `Image Tag` into the `k8s/seldon-deployment.yaml` template.
     *   Generates a final `k8s/final-deployment.yaml` which can be committed to a config repo or applied directly.
 
-## DVC (Data Version Control)
+## DVC (Data Version Control) Pipeline
 
-Data is tracked using DVC.
+This project uses DVC to orchestrate the machine learning pipeline (Data Generation -> Training).
 
+### 1. Initialize & Setup
 ```bash
+# Install dependencies (including dvc)
+pip install -r requirements-dev.txt
+
+# Initialize DVC (if not already done)
 dvc init
-dvc add data/wine_quality.csv
-git add data/wine_quality.csv.dvc .gitignore
-git commit -m "Add data versioning"
+```
+
+### 2. Run the Pipeline
+Use `dvc repro` to run the pipeline defined in `dvc.yaml`. This will checks dependencies and only run stages that have changed.
+```bash
+# Run the full pipeline
+dvc repro
+
+# Or using Make
+make pipeline
+```
+
+### 3. Parameters
+Training hyperparameters are defined in `params.yaml`. Modify them there and rerun the pipeline to experiment.
+```yaml
+train:
+  alpha: 0.5
+  l1_ratio: 0.5
 ```
 
 ## Seldon Core Deployment

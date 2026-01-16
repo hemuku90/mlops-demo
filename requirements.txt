@@ -1,6 +1,8 @@
 pandas<2.2.0
 scikit-learn<1.4.0
+dagshub>=0.3.0
 mlflow==2.14.1
+boto3>=1.28.0
 fastapi
 uvicorn
 numpy<2.0.0
@@ -9,3 +11,4 @@ skl2onnx
 onnx<1.15.0
 onnxruntime<1.17.0
 tritonclient[http]
+PyYAML

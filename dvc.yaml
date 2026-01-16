@@ -1,0 +1,18 @@
+stages:
+  data_gen:
+    cmd: python3 src/model/data_gen.py
+    deps:
+      - src/model/data_gen.py
+    outs:
+      - data/wine_quality.csv
+
+  train:
+    cmd: python3 src/model/train.py
+    deps:
+      - src/model/train.py
+      - data/wine_quality.csv
+    params:
+      - train
+    outs:
+      - models/wine_model
+      - run_info.json

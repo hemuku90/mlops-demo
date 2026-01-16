@@ -1,91 +1,26 @@
-# Makefile for Local Kubernetes Deployment
+# Makefile for MLOps Pipeline & Deployment
 
 IMAGE_TAG := latest
 APP_IMAGE := mlops-wine-app:$(IMAGE_TAG)
-TRITON_IMAGE := mlops-triton:$(IMAGE_TAG)
-KUBE_NAMESPACE ?= dev
+KUBE_NAMESPACE ?= default
+DAGSHUB_USERNAME ?= hemantku1990
+DAGSHUB_TOKEN ?= $(shell echo $$DAGSHUB_TOKEN)
 
-.PHONY: all build deploy test clean logs
+.PHONY: all build deploy-dev deploy-qa deploy-stage deploy-prod clean logs lint
 
-all: build deploy
+all: build deploy-dev
 
-# Build Docker images
+# --- Build ---
 build:
 	@echo "Building App Image..."
-	docker build -t $(APP_IMAGE) .
-	@echo "Building Triton Image (with baked-in models)..."
-	docker build -f Dockerfile.triton -t $(TRITON_IMAGE) .
-
-# Load images into Kind (Optional - run 'make load-kind' if using Kind)
-load-kind:
-	@echo "Loading images into Kind cluster..."
-	kind load docker-image $(APP_IMAGE)
-	kind load docker-image $(TRITON_IMAGE)
-
-# Deploy to Kubernetes (Triton)
-deploy-triton:
-	@echo "Deploying Triton Stack to namespace: $(KUBE_NAMESPACE)..."
-	kubectl create namespace $(KUBE_NAMESPACE) || true
-	kubectl apply -f k8s/local/triton-deployment.yaml -n $(KUBE_NAMESPACE)
-	kubectl apply -f k8s/local/app-deployment.yaml -n $(KUBE_NAMESPACE)
-	# Configure App for Triton
-	kubectl set env deployment/wine-app TRITON_URL=triton-service:8000 SELDON_URL- -n $(KUBE_NAMESPACE)
-	@echo "Waiting for pods..."
-	kubectl wait --for=condition=ready pod -l app=triton-server --timeout=120s -n $(KUBE_NAMESPACE)
-	kubectl wait --for=condition=ready pod -l app=wine-app --timeout=120s -n $(KUBE_NAMESPACE)
-
-# Install Seldon Core via Helm
-install-seldon:
-	@echo "Installing Seldon Core Operator..."
-	helm repo add datawire https://www.getambassador.io
-	helm repo add seldonio https://storage.googleapis.com/seldon-charts
-	helm repo update
-	kubectl create namespace seldon-system || true
-	helm install seldon-core seldonio/seldon-core-operator --namespace seldon-system --set usageMetrics.enabled=true --set istio.enabled=false
-	@echo "Waiting for Seldon Operator..."
-	kubectl rollout status deployment/seldon-controller-manager -n seldon-system
-
-# Deploy to Kubernetes (Seldon)
-deploy-seldon:
-	@echo "Deploying Seldon Stack to namespace: $(KUBE_NAMESPACE)..."
-	kubectl create namespace $(KUBE_NAMESPACE) || true
-	
-	# 1. Deploy MLflow (Storage)
-	kubectl apply -f k8s/local/mlflow-deployment.yaml -n $(KUBE_NAMESPACE)
-	
-	# 2. Prepare Run ID for Seldon Model Download
-	$(eval MLFLOW_RUN_ID := $(shell cat run_info.json | grep -o '"run_id": "[^"]*"' | cut -d'"' -f4))
-	@echo "Deploying Seldon Model using Run ID: $(MLFLOW_RUN_ID)"
-	
-	# 3. Deploy Seldon Model (Substitute MLFLOW_RUN_ID)
-	kubectl delete sdep wine-model -n $(KUBE_NAMESPACE) --ignore-not-found
-	sed 's|$${MLFLOW_RUN_ID}|$(MLFLOW_RUN_ID)|g' k8s/local/seldon-deployment.yaml | kubectl apply -f - -n $(KUBE_NAMESPACE)
-	
-	# Wait for Seldon to create the Deployment object
-	@echo "Waiting for Seldon Deployment object..."
-	@for i in {1..30}; do \
-		if kubectl get deployment wine-model-default-0-ensemble-model -n $(KUBE_NAMESPACE) > /dev/null 2>&1; then break; fi; \
-		echo "Waiting for deployment creation..."; \
-		sleep 2; \
-	done
-	
-	# 4. Deploy App (Configured for Seldon)
-	kubectl apply -f k8s/local/app-deployment.yaml -n $(KUBE_NAMESPACE)
-	# Configure App for Seldon (Unset TRITON_URL, Set SELDON_URL)
-	# Seldon Service URL: http://<sdep-name>-<predictor-name>.<namespace>:8000
-	# Default Seldon creates a service named: wine-model-default
-	kubectl set env deployment/wine-app TRITON_URL- SELDON_URL=http://wine-model-default.$(KUBE_NAMESPACE):8000 -n $(KUBE_NAMESPACE)
-	
-	@echo "Waiting for pods..."
-	kubectl wait --for=condition=ready pod -l app=mlflow-server --timeout=120s -n $(KUBE_NAMESPACE)
-	kubectl wait --for=condition=ready pod -l app=wine-app --timeout=120s -n $(KUBE_NAMESPACE)
-	@echo "Waiting for Seldon Deployment..."
-	kubectl wait --for=condition=available deployment/wine-model-default-0-ensemble-model --timeout=300s -n $(KUBE_NAMESPACE)
+	docker build -t $(APP_IMAGE) -f docker/Dockerfile.app .
+	@echo "Building Drift Server Image..."
+	$(MAKE) build-drift-server
 
 # --- Drift Detection ---
 
 build-drift-trainer:
-	docker build -t mlops-drift-trainer:latest -f Dockerfile.drift .
+	docker build -t mlops-drift-trainer:latest -f docker/Dockerfile.drift .
 
 train-drift-detector: build-drift-trainer
 	mkdir -p models/drift_detector
@@ -94,39 +29,90 @@ train-drift-detector: build-drift-trainer
 		mlops-drift-trainer:latest
 
 build-drift-server: train-drift-detector
-	# Create a Dockerfile for the server on the fly or expect it to exist
-	# We will assume Dockerfile.drift-server exists (to be created next)
-	docker build -t mlops-drift-server:v2 -f Dockerfile.drift-server .
+	docker build -t mlops-drift-server:latest -f docker/Dockerfile.drift-server .
 
-deploy-drift: build-drift-server
-	# Load image into Kind/Desktop
-	# kind load docker-image mlops-drift-server:v2 --name mlops-demo || true
-	# Apply deployment
-	kubectl apply -f k8s/local/drift-detector.yaml -n $(KUBE_NAMESPACE)
-	# Wait for deployment
-	kubectl wait --for=condition=available deployment/wine-drift-detector-default-0-detector --timeout=300s -n $(KUBE_NAMESPACE)
+# --- Environments ---
+
+# DEV: Deploy locally with Minikube/Kind, using local secrets
+deploy-dev: check-env
+	@echo "Deploying to DEV environment..."
+	$(MAKE) deploy-common ENV=dev REPLICAS=1
+
+# QA: Simulate QA env (can be same cluster, different namespace)
+deploy-qa: check-env
+	@echo "Deploying to QA environment..."
+	kubectl create namespace qa || true
+	$(MAKE) deploy-common ENV=qa KUBE_NAMESPACE=qa REPLICAS=2
+
+# STAGE: Pre-prod
+deploy-stage: check-env
+	@echo "Deploying to STAGE environment..."
+	kubectl create namespace stage || true
+	$(MAKE) deploy-common ENV=stage KUBE_NAMESPACE=stage REPLICAS=2
+
+# PROD: Production deployment
+deploy-prod: check-env
+	@echo "Deploying to PROD environment..."
+	kubectl create namespace prod || true
+	$(MAKE) deploy-common ENV=prod KUBE_NAMESPACE=prod REPLICAS=3
+
+# --- Deployment Logic ---
+
+deploy-common:
+	@echo "Deploying Stack to $(KUBE_NAMESPACE)..."
+	
+	# 1. create secrets (substituting env vars)
+	cat k8s/local/secrets.yaml | envsubst | kubectl apply -n $(KUBE_NAMESPACE) -f -
+	
+	# 2. Get Run ID from local run_info.json (Simulating CI/CD fetching this artifact)
+	$(eval MLFLOW_RUN_ID := $(shell cat run_info.json | grep -o '"run_id": "[^"]*"' | cut -d'"' -f4))
+	@echo "Using MLflow Run ID: $(MLFLOW_RUN_ID)"
+	
+	# 3. Apply Seldon Deployment (Substitute Run ID)
+	sed 's|$${MLFLOW_RUN_ID}|$(MLFLOW_RUN_ID)|g' k8s/local/production-deployment.yaml | \
+	sed 's|namespace: default|namespace: $(KUBE_NAMESPACE)|g' | \
+	sed 's|wine-drift-detector.default|wine-drift-detector.$(KUBE_NAMESPACE)|g' | \
+	sed 's|wine-model-default.default|wine-model-default.$(KUBE_NAMESPACE)|g' | \
+	kubectl apply -n $(KUBE_NAMESPACE) -f -
+	
+	@echo "Waiting for Seldon Deployment to be ready..."
+	kubectl rollout status deployment/wine-model-production-0-ensemble-model -n $(KUBE_NAMESPACE) --timeout=300s
+	kubectl rollout status deployment/wine-drift-detector-default-0-detector -n $(KUBE_NAMESPACE) --timeout=300s
+	
+	@echo "Waiting for App..."
+	kubectl rollout status deployment/wine-app -n $(KUBE_NAMESPACE) --timeout=120s
+	
+	@echo "Deployment Complete! Service URL: http://localhost:80/predict (via LoadBalancer) or Port Forward."
+
+# --- Utilities ---
+
+check-env:
+ifndef DAGSHUB_TOKEN
+	$(error DAGSHUB_TOKEN is undefined. Please export it)
+endif
+
+# Run DVC Pipeline
+pipeline:
+	dvc repro
+
+# Run linting
+lint:
+	flake8 src tests --count --select=E9,F63,F7,F82 --show-source --statistics
+	flake8 src tests --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
 # Test Inference
-test:
+test-api:
 	@echo "Testing prediction endpoint..."
-	@# Check if port forwarding is needed or if LoadBalancer is working (Docker Desktop)
-	@echo "Sending prediction request to http://localhost:8000/predict"
-	curl -X POST "http://localhost:8000/predict" \
+	curl -X POST "http://localhost:80/predict" \
 		-H "Content-Type: application/json" \
 		-d '{"alcohol": 13.2, "malic_acid": 1.78, "ash": 2.14, "alcalinity_of_ash": 11.2, "magnesium": 100.0, "total_phenols": 2.65, "flavanoids": 2.76, "nonflavanoid_phenols": 0.26, "proanthocyanins": 1.28, "color_intensity": 4.38, "hue": 1.05, "od280_od315_of_diluted_wines": 3.4, "proline": 1050.0}'
 
-# Clean up resources
 clean:
-	@echo "Cleaning up namespace: $(KUBE_NAMESPACE)..."
-	kubectl delete -f k8s/local/app-deployment.yaml --ignore-not-found -n $(KUBE_NAMESPACE)
-	kubectl delete -f k8s/local/triton-deployment.yaml --ignore-not-found -n $(KUBE_NAMESPACE)
-	kubectl delete -f k8s/local/seldon-deployment.yaml --ignore-not-found -n $(KUBE_NAMESPACE)
-	kubectl delete -f k8s/local/mlflow-deployment.yaml --ignore-not-found -n $(KUBE_NAMESPACE)
+	@echo "Cleaning up..."
+	kubectl delete -f k8s/local/production-deployment.yaml --ignore-not-found -n default
+	kubectl delete -f k8s/local/production-deployment.yaml --ignore-not-found -n qa
+	kubectl delete -f k8s/local/production-deployment.yaml --ignore-not-found -n stage
+	kubectl delete -f k8s/local/production-deployment.yaml --ignore-not-found -n prod
+	kubectl delete secret dagshub-secret --ignore-not-found -n default
 
-# Show logs
-logs-app:
-	kubectl logs -l app=wine-app -f -n $(KUBE_NAMESPACE)
-
-logs-triton:
-	kubectl logs -l app=triton-server -f -n $(KUBE_NAMESPACE)
 

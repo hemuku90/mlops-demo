@@ -1,4 +1,5 @@
-FROM python:3.9-slim
+# Build stage
+FROM python:3.9-slim AS builder
 
 WORKDIR /app
 
@@ -12,7 +13,7 @@ RUN apt-get update && apt-get install -y \
 
 # Install python dependencies
 # Must match the trainer exactly for dill compatibility
-RUN pip install --no-cache-dir \
+RUN pip install --user --no-cache-dir \
     alibi-detect==0.11.4 \
     "scipy<1.12" \
     dill==0.3.6 \
@@ -21,20 +22,43 @@ RUN pip install --no-cache-dir \
     numpy \
     seldon-core
 
+# Final stage
+FROM python:3.9-slim
+
+WORKDIR /app
+
+# Create a non-root user with home directory
+RUN groupadd -r appuser && useradd -r -m -g appuser appuser
+
+# Copy installed packages from builder
+COPY --from=builder /root/.local /home/appuser/.local
+
+# Update PATH and PYTHONPATH
+ENV HOME=/home/appuser
+ENV PATH=$HOME/.local/bin:$PATH
+ENV PYTHONPATH=$HOME/.local/lib/python3.9/site-packages:/app
+
 # Copy the wrapper code
 COPY src/drift/DriftWrapper.py /app/DriftWrapper.py
 
 # Copy the trained detector artifact (baked in for simplicity, or could be mounted)
+# Note: In a real production setup, this should likely be mounted or pulled from storage
 COPY models/drift_detector /mnt/models/drift_detector
 
 # Set environment variables
 ENV MODEL_NAME=DriftWrapper
 ENV SERVICE_TYPE=MODEL
 ENV STORAGE_URI=/mnt/models/drift_detector
-
-# Expose ports
 # Fix Numba caching issue in container
 ENV NUMBA_CACHE_DIR=/tmp
+
+# Set ownership
+RUN chown -R appuser:appuser /app && \
+    chown -R appuser:appuser /home/appuser && \
+    mkdir -p /tmp && \
+    chmod 777 /tmp
+
+USER appuser
 
 EXPOSE 5000 9000
 

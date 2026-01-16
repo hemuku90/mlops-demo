@@ -1,0 +1,167 @@
+apiVersion: machinelearning.seldon.io/v1
+kind: SeldonDeployment
+metadata:
+  name: wine-model
+  namespace: default
+spec:
+  protocol: kfserving
+  name: wine-model
+  predictors:
+  - name: production
+    replicas: 1
+    componentSpecs:
+    - spec:
+        volumes:
+        - name: model-provision
+          emptyDir: {}
+        
+        # Init Container to fetch model from MLflow
+        initContainers:
+        - name: model-fetcher
+          image: python:3.9-slim
+          env:
+          - name: HOME
+            value: "/tmp"
+          - name: MLFLOW_TRACKING_URI
+            value: "https://dagshub.com/hemantku1990/my-first-repo.mlflow"
+          - name: MLFLOW_RUN_ID
+            value: "d6d37eed9bd3403e95f2e62f59defbef" # Replaced by CI/CD or Makefile
+          envFrom:
+          - secretRef:
+              name: dagshub-secret
+          command: ["/bin/bash", "-c"]
+          args:
+          - |
+            export PATH=$PATH:/tmp/.local/bin
+            pip install --no-cache-dir mlflow boto3
+            echo "Downloading artifacts for Run ID: $MLFLOW_RUN_ID"
+            
+            # Create a temp directory for download in /tmp
+            mkdir -p /tmp/download
+            
+            # Download the 'triton_repo' artifact folder to /tmp/download
+            # The structure in MLflow is artifacts/triton_repo/{model_repository_content}
+            # This will create /tmp/download/triton_repo
+            mlflow artifacts download --run-id $MLFLOW_RUN_ID --artifact-path triton_repo --dst-path /tmp/download
+            
+            # Move contents to mount root
+            # We want the CONTENTS of triton_repo to be at /mnt/models/
+            # So we move /tmp/download/triton_repo/* to /mnt/models/
+            cp -r /tmp/download/triton_repo/* /mnt/models/
+            ls -R /mnt/models
+          volumeMounts:
+          - mountPath: /mnt/models
+            name: model-provision
+
+        containers:
+        # Triton Server Container
+        - name: ensemble-model
+          image: nvcr.io/nvidia/tritonserver:24.03-py3
+          resources:
+            requests:
+              memory: 1Gi
+              cpu: 500m
+          volumeMounts:
+          - mountPath: /mnt/models
+            name: model-provision
+          args:
+          - "tritonserver"
+          - "--model-repository=/mnt/models"
+          - "--log-verbose=1"
+          - "--strict-model-config=false"
+          - "--http-port=9000"
+          - "--grpc-port=9001"
+          - "--metrics-port=9002"
+          ports:
+          - containerPort: 9000
+            name: http
+          - containerPort: 9001
+            name: grpc
+          - containerPort: 9002
+            name: metrics
+
+    graph:
+      name: ensemble-model
+      type: MODEL
+      endpoint:
+        type: REST
+        service_port: 9000
+      children: []
+      logger:
+        url: http://wine-drift-detector-default.default.svc.cluster.local:8000/api/v1.0/predictions
+        mode: request # Log requests only
+      
+---
+apiVersion: machinelearning.seldon.io/v1
+kind: SeldonDeployment
+metadata:
+  name: wine-drift-detector
+  namespace: default
+spec:
+  name: drift-detector
+  predictors:
+  - name: default
+    replicas: 1
+    componentSpecs:
+    - spec:
+        containers:
+        - name: detector
+          image: mlops-drift-server:v9
+          imagePullPolicy: IfNotPresent
+          ports:
+          - containerPort: 9000
+            name: http
+          - containerPort: 5000
+            name: grpc
+          env:
+          - name: STORAGE_URI
+            value: "/app/models/drift_detector"
+          - name: MODEL_NAME
+            value: "wine-drift-detector"
+          - name: PROTOCOL
+            value: "seldon.http"
+    graph:
+      name: detector
+      type: MODEL
+      endpoint:
+        type: REST
+      children: []
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wine-app
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wine-app
+  template:
+    metadata:
+      labels:
+        app: wine-app
+    spec:
+      containers:
+      - name: wine-app
+        image: mlops-wine-app:debug-v3
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8000
+        env:
+        - name: SELDON_URL
+          value: "http://wine-model-production.default.svc.cluster.local:8000"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wine-app-service
+  namespace: default
+spec:
+  selector:
+    app: wine-app
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8000
+  type: LoadBalancer

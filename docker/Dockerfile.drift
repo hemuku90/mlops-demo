@@ -1,0 +1,50 @@
+FROM python:3.9-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install python dependencies globally
+RUN pip install --no-cache-dir \
+    alibi-detect==0.11.4 \
+    "scipy<1.12" \
+    dill==0.3.6 \
+    pandas \
+    scikit-learn \
+    numpy \
+    seldon-core \
+    mlserver
+
+# Create non-root user
+RUN groupadd -r appuser && useradd -r -m -g appuser appuser
+
+# Copy source code
+COPY src/drift /app/src/drift
+COPY data /app/data
+
+# Train detector
+RUN python src/drift/train_detector.py
+
+# Move Wrapper
+RUN cp src/drift/DriftWrapper.py /app/DriftWrapper.py
+
+# Create MLServer settings
+RUN echo '{"name": "wine-drift-detector", "implementation": "DriftWrapper.DriftWrapper"}' > /app/model-settings.json
+RUN echo '{"http_port": 9000, "grpc_port": 5000}' > /app/settings.json
+
+# Set permissions
+RUN chown -R appuser:appuser /app
+
+# Switch user
+USER appuser
+
+# Env vars
+ENV PYTHONUNBUFFERED=1
+ENV NUMBA_CACHE_DIR=/tmp
+
+# Cmd
+CMD ["mlserver", "start", "/app"]

@@ -7,11 +7,40 @@ on:
     branches: [ main ]
 
 env:
-  MLFLOW_TRACKING_URI: http://localhost:5001
+  MLFLOW_TRACKING_URI: https://dagshub.com/hemantku1990/my-first-repo.mlflow
+  DAGSHUB_REPO_OWNER: hemantku1990
+  DAGSHUB_REPO_NAME: my-first-repo
   IMAGE_NAME: mlops-wine-app
 
 jobs:
+  test-and-lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python 3.9
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.9
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements-dev.txt
+
+    - name: Lint with flake8
+      run: |
+        # stop the build if there are Python syntax errors or undefined names
+        flake8 src tests --count --select=E9,F63,F7,F82 --show-source --statistics
+        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
+        flake8 src tests --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+    - name: Run Tests
+      run: |
+        pytest tests/
+
   train-and-register:
+    needs: [test-and-lint]
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
@@ -45,16 +74,11 @@ jobs:
           python src/model/data_gen.py
         fi
 
-    - name: Start Local MLflow Server (Simulation)
-      run: |
-        # In production, this would be a remote server.
-        # We start it locally here so the training script can log to it.
-        pip install mlflow==2.14.1
-        mkdir mlflow_data
-        nohup mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root ./mlflow_data --host 0.0.0.0 --port 5001 &
-        sleep 5
-
     - name: Train Model
+      env:
+        MLFLOW_TRACKING_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
+        MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
+        DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
       run: python src/model/train.py
 
     - name: Upload Run Info
@@ -64,13 +88,14 @@ jobs:
         path: run_info.json
 
   build-image:
+    needs: [test-and-lint] # Run in parallel with training or after? Usually separate.
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
     
     - name: Build Docker Image
       run: |
-        docker build . --file Dockerfile --tag $IMAGE_NAME:${{ github.sha }}
+        docker build . --file docker/Dockerfile.app --tag $IMAGE_NAME:${{ github.sha }}
         # In production: docker push $IMAGE_NAME:${{ github.sha }}
 
   generate-deployment-manifest:
